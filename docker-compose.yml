@@ -1,0 +1,42 @@
+services:
+  worker1:
+    image: ollama/ollama
+    container_name: worker1
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./start_worker.sh:/start_worker.sh
+    entrypoint: ["/start_worker.sh"]
+
+  worker2:
+    image: ollama/ollama
+    container_name: worker2
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./start_worker.sh:/start_worker.sh
+    entrypoint: ["/start_worker.sh"]
+
+  worker3:
+    image: ollama/ollama
+    container_name: worker3
+    ports:
+      - "11436:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./start_worker.sh:/start_worker.sh
+    entrypoint: ["/start_worker.sh"]
+
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - worker1
+      - worker2
+      - worker3
+
+volumes:
+  ollama_data:
