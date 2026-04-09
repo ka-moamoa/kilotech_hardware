@@ -1,0 +1,1 @@
+Use `docker compose up -d` to create the containers. Then run Client.py which will send multiple requests to the API Gateway container to then schedule requests for each of the three worker nodes with Ollama.
