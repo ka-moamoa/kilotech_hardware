@@ -1,0 +1,39 @@
+# Worker node: an Ollama model server plus the agent that pulls jobs for it.
+# On each worker machine, from the repo root:
+#   cp worker/.env.example worker/.env     # then set GATEWAY_URL, STORAGE_URLS, ...
+#   docker compose -f worker/compose.yml up -d --build
+# Only outbound connections are made (to the gateway and storage); no ports are opened.
+services:
+  ollama:
+    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      OLLAMA_NUM_PARALLEL: ${WORKER_CONCURRENCY:-1}  # match the agent's concurrency
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+
+  agent:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+      additional_contexts:
+        plugins: ${WORKER_PLUGIN_DIR:-./plugins}
+    image: kilotech-worker:latest
+    restart: unless-stopped
+    stop_grace_period: 5m  # `docker stop` lets in-flight jobs finish before exiting
+    depends_on:
+      - ollama
+    environment:
+      KILOTECH_WORKER_ID: ${WORKER_ID:-}
+      KILOTECH_WORKER_GATEWAY_URL: ${GATEWAY_URL:?set GATEWAY_URL in worker/.env}
+      KILOTECH_WORKER_TOKEN: ${CLUSTER_TOKEN:-}
+      KILOTECH_WORKER_STORAGE_URLS: ${STORAGE_URLS:-}
+      KILOTECH_WORKER_MODELS: ${WORKER_MODELS:-qwen2.5:3b}
+      KILOTECH_WORKER_PULL_MODELS: "true"
+      KILOTECH_WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      KILOTECH_WORKER_BACKEND__TYPE: ollama
+      KILOTECH_WORKER_BACKEND__URL: http://ollama:11434
+
+volumes:
+  ollama_data:

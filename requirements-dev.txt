@@ -1,0 +1,8 @@
+# Local development / tests (no Docker needed):
+#   python -m venv .venv && .venv/Scripts/activate   (Linux: source .venv/bin/activate)
+#   pip install -r requirements-dev.txt && pytest
+-e ./common
+-e ./gateway
+-e ./worker
+-e ./storage
+pytest

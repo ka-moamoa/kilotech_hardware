@@ -1,0 +1,16 @@
+# Gateway node. On the gateway machine, from the repo root:
+#   cp gateway/.env.example gateway/.env   # then edit
+#   docker compose -f gateway/compose.yml up -d --build
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    image: kilotech-gateway:latest
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    environment:
+      KILOTECH_GATEWAY_TOKEN: ${CLUSTER_TOKEN:-}
+      KILOTECH_GATEWAY_MAX_QUEUED: ${MAX_QUEUED:-}
+      KILOTECH_GATEWAY_LEASE_S: ${LEASE_S:-}

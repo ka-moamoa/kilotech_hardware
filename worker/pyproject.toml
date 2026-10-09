@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kilotech-worker"
+version = "0.1.0"
+description = "Kilotech worker agent: pulls jobs from the gateway and runs pipelines"
+requires-python = ">=3.10"
+dependencies = ["kilotech-common", "httpx>=0.25"]
+
+[project.scripts]
+kilotech-worker = "kilotech_worker.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["kilotech_worker*"]

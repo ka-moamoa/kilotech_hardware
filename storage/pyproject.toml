@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kilotech-storage"
+version = "0.1.0"
+description = "Kilotech storage node: RAG corpus + embedding index served over HTTP"
+requires-python = ">=3.10"
+dependencies = ["kilotech-common", "fastapi>=0.110", "uvicorn>=0.27", "numpy>=1.24"]
+
+[project.optional-dependencies]
+sentence-transformers = ["sentence-transformers>=2.2"]
+
+[project.scripts]
+kilotech-storage = "kilotech_storage.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["kilotech_storage*"]

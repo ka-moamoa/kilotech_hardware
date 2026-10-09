@@ -1,42 +1,103 @@
+# Local all-in-one test cluster: gateway + storage + 3 worker nodes (Ollama + agent each)
+# on one machine. Real deployments use the per-role compose files in gateway/, worker/
+# and storage/ instead, one role per machine.
+#
+#   docker compose up -d --build
+#   python client.py                      # load test through the Ollama-compatible API
+#   python tools/ask.py "When should I plant kalo?"   # KiloTech RAG through the cluster
+
+x-ollama: &ollama
+  image: ollama/ollama:${OLLAMA_VERSION:-latest}
+  restart: unless-stopped
+  volumes:
+    - ollama_data:/root/.ollama
+  environment:
+    OLLAMA_NUM_PARALLEL: "1"
+    OLLAMA_KEEP_ALIVE: 30m
+  depends_on:
+    ollama-init:
+      condition: service_completed_successfully
+
+x-agent: &agent
+  build:
+    context: .
+    dockerfile: worker/Dockerfile
+    additional_contexts:
+      plugins: ${WORKER_PLUGIN_DIR:-../kilotech_llm_local}
+  image: kilotech-worker:local
+  restart: unless-stopped
+  stop_grace_period: 5m  # `docker stop` lets in-flight jobs finish before exiting
+
+x-agent-env: &agent-env
+  KILOTECH_WORKER_GATEWAY_URL: http://gateway:8000
+  KILOTECH_WORKER_STORAGE_URLS: http://storage:8100
+  KILOTECH_WORKER_TOKEN: ${CLUSTER_TOKEN:-}
+  KILOTECH_WORKER_MODELS: ${WORKER_MODELS:-qwen2.5:3b}
+
 services:
-  worker1:
-    image: ollama/ollama
-    container_name: worker1
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./start_worker.sh:/start_worker.sh
-    entrypoint: ["/start_worker.sh"]
-
-  worker2:
-    image: ollama/ollama
-    container_name: worker2
-    ports:
-      - "11435:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./start_worker.sh:/start_worker.sh
-    entrypoint: ["/start_worker.sh"]
-
-  worker3:
-    image: ollama/ollama
-    container_name: worker3
-    ports:
-      - "11436:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./start_worker.sh:/start_worker.sh
-    entrypoint: ["/start_worker.sh"]
-
-  api:
-    build: ./api
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    image: kilotech-gateway:local
+    restart: unless-stopped
     ports:
       - "8000:8000"
-    depends_on:
-      - worker1
-      - worker2
-      - worker3
+    environment:
+      KILOTECH_GATEWAY_TOKEN: ${CLUSTER_TOKEN:-}
+
+  storage:
+    build:
+      context: .
+      dockerfile: storage/Dockerfile
+    image: kilotech-storage:local
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    volumes:
+      - ${CORPUS_DIR:-../kilotech_llm_local/Data/hawaiian_chunks}:/data/corpus/hawaiian_chunks:ro
+      - storage_cache:/data/cache
+    environment:
+      KILOTECH_STORAGE_TOKEN: ${CLUSTER_TOKEN:-}
+
+  # Pulls the models once into the shared volume before the Ollama servers start.
+  ollama-init:
+    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./worker/ollama/pull_models.sh:/pull_models.sh:ro
+    entrypoint: ["/bin/sh", "/pull_models.sh"]
+    environment:
+      PULL_MODELS: ${WORKER_MODELS:-qwen2.5:3b}
+
+  ollama1: *ollama
+  ollama2: *ollama
+  ollama3: *ollama
+
+  worker1:
+    <<: *agent
+    depends_on: [ollama1]
+    environment:
+      <<: *agent-env
+      KILOTECH_WORKER_ID: worker1
+      KILOTECH_WORKER_BACKEND__URL: http://ollama1:11434
+
+  worker2:
+    <<: *agent
+    depends_on: [ollama2]
+    environment:
+      <<: *agent-env
+      KILOTECH_WORKER_ID: worker2
+      KILOTECH_WORKER_BACKEND__URL: http://ollama2:11434
+
+  worker3:
+    <<: *agent
+    depends_on: [ollama3]
+    environment:
+      <<: *agent-env
+      KILOTECH_WORKER_ID: worker3
+      KILOTECH_WORKER_BACKEND__URL: http://ollama3:11434
 
 volumes:
   ollama_data:
+  storage_cache:

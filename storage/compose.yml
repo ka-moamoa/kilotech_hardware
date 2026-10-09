@@ -1,0 +1,22 @@
+# Storage node: serves retrieval over the RAG corpus. On the storage machine, from the repo root:
+#   cp storage/.env.example storage/.env   # then set CORPUS_DIR
+#   docker compose -f storage/compose.yml up -d --build
+services:
+  storage:
+    build:
+      context: ..
+      dockerfile: storage/Dockerfile
+    image: kilotech-storage:latest
+    restart: unless-stopped
+    ports:
+      - "${STORAGE_PORT:-8100}:8100"
+    volumes:
+      # Each folder mounted under /data/corpus is one collection.
+      - ${CORPUS_DIR:?set CORPUS_DIR in storage/.env}:/data/corpus/hawaiian_chunks:ro
+      - storage_cache:/data/cache
+    environment:
+      KILOTECH_STORAGE_TOKEN: ${CLUSTER_TOKEN:-}
+      KILOTECH_STORAGE_EMBEDDER__MODEL: ${EMBED_MODEL:-all-MiniLM-L6-v2}
+
+volumes:
+  storage_cache:

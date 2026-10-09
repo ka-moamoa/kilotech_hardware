@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kilotech-gateway"
+version = "0.1.0"
+description = "Kilotech cluster gateway: job queue that worker nodes pull from"
+requires-python = ">=3.10"
+dependencies = ["kilotech-common", "fastapi>=0.110", "uvicorn>=0.27"]
+
+[project.scripts]
+kilotech-gateway = "kilotech_gateway.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["kilotech_gateway*"]
