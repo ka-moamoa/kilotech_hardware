@@ -1,0 +1,20 @@
+# Optional override: run kilotech_rag retrieval inside the worker, with the same
+# SemanticRetriever the kilotech_llm_local CLI uses, instead of on the storage node.
+# Needs the corpus on this machine (set WORKER_CORPUS_DIR in worker/.env), then:
+#   docker compose -f worker/compose.yml -f worker/compose.local-retrieval.yml up -d --build
+# The first job downloads the embedding model and embeds the corpus (~30-60 s on CPU);
+# both are cached in the worker_data volume for later restarts.
+services:
+  agent:
+    build:
+      args:
+        PLUGIN_EXTRAS: local
+    volumes:
+      - ${WORKER_CORPUS_DIR:?set WORKER_CORPUS_DIR in worker/.env}:/data/corpus/hawaiian_chunks:ro
+      - worker_data:/var/lib/kilotech-worker
+    environment:
+      KILOTECH_WORKER_PIPELINE_CONFIG__KILOTECH_RAG__RETRIEVAL: local
+      KILOTECH_WORKER_PIPELINE_CONFIG__KILOTECH_RAG__CACHE_DIR: /var/lib/kilotech-worker/embeddings
+
+volumes:
+  worker_data:

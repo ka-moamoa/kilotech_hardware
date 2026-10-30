@@ -28,6 +28,10 @@ docker compose -f worker/compose.yml up -d --build
   `kilotech.pipelines` entry point. For example, `kilotech_llm_local` provides `kilotech_rag`.
   `WORKER_PLUGIN_DIR` bakes such a project into the image at build time. A pipeline is any
   object with `name` and `async run(job, ctx) -> dict`; see `kilotech_worker/pipelines/base.py`.
+- **Local retrieval**: by default `kilotech_rag` retrieves from the storage node. To run the
+  CLI's own retriever inside the worker instead, set `WORKER_CORPUS_DIR` and add the override:
+  `docker compose -f worker/compose.yml -f worker/compose.local-retrieval.yml up -d --build`.
+  This builds the image with `PLUGIN_EXTRAS=local` (CPU torch + sentence-transformers).
 - **Backends** (what serves the model): `ollama`, `openai` (any OpenAI-compatible server:
   vLLM, llama.cpp, LM Studio, ...) and `echo` (a fake model for tests). Select one with
   `KILOTECH_WORKER_BACKEND__TYPE`, or `module:Class` for your own `LLMBackend`.
