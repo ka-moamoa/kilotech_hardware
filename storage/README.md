@@ -35,3 +35,23 @@ To scale out, run the same thing on more machines and list them all in the worke
 
 Settings live in `kilotech_storage/config.py`. Set them as `KILOTECH_STORAGE_*` env vars (for
 example `KILOTECH_STORAGE_EMBEDDER__MODEL`) or through a YAML file named by `KILOTECH_STORAGE_CONFIG`.
+
+## Logging and inspection
+
+```
+# Is it ready? Shows "loading" / "ready", any error, and the number of collections
+curl -s localhost:8100/healthz | jq
+
+# Collections with chunk and file counts
+curl -s localhost:8100/v1/collections | jq
+
+# Try a retrieval by hand
+curl -s localhost:8100/v1/retrieve -H 'Content-Type: application/json' \
+  -d '{"query": "when to plant kalo", "top_k": 3}' | jq '.chunks[] | {score, collection, source}'
+
+# Re-read the corpus after adding files (add -H "X-Cluster-Token: $TOKEN" if set)
+curl -s -X POST localhost:8100/v1/admin/reindex
+
+# Storage logs (indexing and embedding progress)
+docker compose -f storage/compose.yml logs -f storage
+```

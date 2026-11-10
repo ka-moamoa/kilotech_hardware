@@ -41,3 +41,25 @@ for nested keys) or through a YAML file named by `KILOTECH_WORKER_CONFIG`.
 
 `ollama/pull_models.sh` is only used by the root all-in-one compose, where three Ollama
 containers share one model volume.
+
+## Logging and inspection
+
+```
+# Agent logs: registration, claimed jobs, heartbeats, retries
+docker compose -f worker/compose.yml logs -f agent
+docker compose -f worker/compose.yml logs --since 10m agent
+
+# Model server logs, and which models are pulled / loaded right now
+docker compose -f worker/compose.yml logs -f ollama
+docker compose -f worker/compose.yml exec ollama ollama list
+docker compose -f worker/compose.yml exec ollama ollama ps
+
+# Container state
+docker compose -f worker/compose.yml ps
+
+# Is this worker registered with the gateway?
+curl -s http://<gateway>:8000/v1/cluster | jq '.workers[] | {worker_id, models, last_seen}'
+```
+
+In the root all-in-one compose the services are `worker1`..`worker3` and `ollama1`..`ollama3`,
+for example `docker compose logs -f worker1`.
