@@ -16,7 +16,12 @@ first.
 
 ## Deploy
 
+On Linux, run this from the `/srv` deployment copy, not your working copy in `~` (see
+"Where the repos go on Linux" in the root README). `/srv/kilotech_llm_local` must also be
+cloned, because the default `WORKER_PLUGIN_DIR` points to it.
+
 ```
+cd /srv/kilotech_hardware
 cp worker/.env.example worker/.env      # set GATEWAY_URL, STORAGE_URLS, WORKER_MODELS
 docker compose -f worker/compose.yml up -d --build
 ```

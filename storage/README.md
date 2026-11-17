@@ -14,7 +14,12 @@ corpus nor an embedding model.
 
 ## Deploy
 
+On Linux, run this from the `/srv` deployment copy, not your working copy in `~` (see
+"Where the repos go on Linux" in the root README). `/srv/kilotech_llm_local` must also be
+cloned, because the default `CORPUS_DIR` points into it.
+
 ```
+cd /srv/kilotech_hardware
 cp storage/.env.example storage/.env      # set CORPUS_DIR
 docker compose -f storage/compose.yml up -d --build
 curl localhost:8100/healthz               # 503 "loading" until indexed, then 200

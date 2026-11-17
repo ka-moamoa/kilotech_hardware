@@ -12,7 +12,11 @@ The single entry point for clients, and the job queue that workers pull from.
 
 ## Deploy
 
+On Linux, run this from the `/srv` deployment copy, not your working copy in `~` (see
+"Where the repos go on Linux" in the root README).
+
 ```
+cd /srv/kilotech_hardware
 cp gateway/.env.example gateway/.env
 docker compose -f gateway/compose.yml up -d --build
 curl localhost:8000/v1/cluster            # registered workers + queue depth
