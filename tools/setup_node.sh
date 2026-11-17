@@ -1,33 +1,48 @@
 #!/usr/bin/env bash
 #
-# Prepares a Linux (Ubuntu/Debian) machine for the Kilotech cluster. Every step first checks
-# whether it is already done properly and only fixes what is missing, so it is safe to re-run.
+# Prepares a Linux (Ubuntu/Debian) machine for its role in the Kilotech cluster. Every step
+# first checks whether it is already done properly and only fixes what is missing, so it is
+# safe to re-run.
 #
 #   1. base packages: git, ssh, curl, python3
-#   2. one GitHub deploy key per repo (~/.ssh/<repo>_deploy_ed25519), plus a Host alias for
-#      it in ~/.ssh/config. The public keys are printed so you can add them on GitHub.
+#   2. one GitHub deploy key per repo the role needs (~/.ssh/<repo>_deploy_ed25519), plus a
+#      Host alias for it in ~/.ssh/config. The public keys are printed so you can add them.
 #   3. Docker Engine and the compose plugin, the service enabled, and you in the docker group
-#   4. Ollama installed and running, and the model pulled (default: gemma4)
-#   5. kilotech_hardware and kilotech_llm_local cloned into /srv through the deploy keys
-#   6. a .venv in each /srv repo with all of its dependencies installed
+#   4. workers only: Ollama installed and running, and the model pulled (default: gemma4)
+#   5. the repos the role needs, cloned into /srv through the deploy keys
+#   6. a .venv with all dependencies in each of those /srv repos
+#
+# What each role gets (several can share a machine, e.g. --role gateway,storage):
+#
+#   role      repos in /srv                                   Ollama + model  venvs
+#   gateway   kilotech_hardware                               -               kilotech_hardware
+#   storage   kilotech_hardware, kilotech_llm_local (corpus)  -               kilotech_hardware
+#   worker    kilotech_hardware, kilotech_llm_local (plugin)  yes             both
+#   all       everything (the one-machine test cluster, or a dev box)
+#
+# Every role gets the base packages and Docker. If --role is not given, the script uses the
+# role saved from the last run (~/.config/kilotech/role), or asks for one.
 #
 # Run it as your normal user, not with sudo. It asks for your sudo password when it needs it.
 #
-#   tools/setup_node.sh                      # check everything, fix what is missing
+#   tools/setup_node.sh --role worker        # check everything, fix what is missing
 #   tools/setup_node.sh --check              # only report, change nothing
 #   tools/setup_node.sh --skip docker,model  # skip steps: prereqs keys docker ollama model repos venvs
-#   tools/setup_node.sh --model qwen2.5:3b   # pull a different model
+#   tools/setup_node.sh --model qwen2.5:3b   # pull a different model (workers)
 #   tools/setup_node.sh --non-interactive    # never wait for input (e.g. for deploy keys)
 #
-# Environment overrides: KILOTECH_SRV_DIR (/srv), KILOTECH_OLLAMA_MODEL (gemma4),
-# KILOTECH_GITHUB_ORG (ka-moamoa).
+# Environment overrides: KILOTECH_ROLE, KILOTECH_SRV_DIR (/srv), KILOTECH_OLLAMA_MODEL
+# (gemma4), KILOTECH_GITHUB_ORG (ka-moamoa).
 
 set -uo pipefail
 
 SRV_DIR=${KILOTECH_SRV_DIR:-/srv}
 MODEL=${KILOTECH_OLLAMA_MODEL:-gemma4}
 GITHUB_ORG=${KILOTECH_GITHUB_ORG:-ka-moamoa}
-REPOS=(kilotech_hardware kilotech_llm_local)
+ROLE=${KILOTECH_ROLE:-}
+ROLES=(gateway storage worker all)
+ROLE_FILE=${XDG_CONFIG_HOME:-$HOME/.config}/kilotech/role
+ALL_REPOS=(kilotech_hardware kilotech_llm_local)
 STEPS=(prereqs keys docker ollama model repos venvs)
 OLLAMA_URL=http://127.0.0.1:11434
 SSH_CONFIG=$HOME/.ssh/config
@@ -44,6 +59,8 @@ usage() { sed -n '3,/^$/s/^# \{0,1\}//p' "$0"; }
 while (($#)); do
   case $1 in
     --check) CHECK_ONLY=1 ;;
+    --role) ROLE=${2:?--role needs gateway, storage, worker or all}; shift ;;
+    --role=*) ROLE=${1#*=} ;;
     --skip) SKIP+="${2:?--skip needs a comma-separated list}," ; shift ;;
     --skip=*) SKIP+="${1#*=}," ;;
     --model) MODEL=${2:?--model needs a name}; shift ;;
@@ -122,6 +139,68 @@ wait_for() { # wait_for <fn> <seconds>
 }
 
 has_systemd() { [[ -d /run/systemd/system ]]; }
+
+# ---------------------------------------------------------------- roles
+
+has_role() { [[ ",$ROLE," == *",$1,"* || ",$ROLE," == *",all,"* ]]; }
+
+valid_role() {
+  local r
+  [[ -n $1 ]] || return 1
+  for r in ${1//,/ }; do
+    [[ " ${ROLES[*]} " == *" $r "* ]] || return 1
+  done
+}
+
+# Sets ROLE (from --role / KILOTECH_ROLE, the saved role, or a prompt), saves it, and works
+# out what this machine needs: NEED_REPOS, VENV_REPOS, NEED_OLLAMA.
+ROLE_SOURCE=""
+resolve_role() {
+  local saved=""
+  [[ -r $ROLE_FILE ]] && saved=$(<"$ROLE_FILE")
+  if [[ -n $ROLE ]]; then
+    ROLE_SOURCE="from --role"
+  elif [[ -n $saved ]]; then
+    ROLE=$saved ROLE_SOURCE="saved in $ROLE_FILE; --role to change"
+  elif ((INTERACTIVE)); then
+    echo
+    echo "Which role is this machine? gateway, storage, worker, or all (comma-separate several)."
+    while :; do
+      read -r -p "   role: " ROLE || die "no role given"
+      ROLE=${ROLE// /}
+      ROLE=${ROLE,,}
+      valid_role "$ROLE" && break
+      warn "not a role: $ROLE"
+    done
+    ROLE_SOURCE="entered"
+  else
+    die "no role: pass --role gateway|storage|worker|all (or set KILOTECH_ROLE)"
+  fi
+  ROLE=${ROLE// /}
+  ROLE=${ROLE,,}
+  valid_role "$ROLE" || die "unknown role '$ROLE' (roles: ${ROLES[*]}; comma-separate several)"
+  has_role all && ROLE=all
+
+  if ((!CHECK_ONLY)) && [[ $ROLE != "$saved" ]]; then
+    mkdir -p "$(dirname "$ROLE_FILE")" && echo "$ROLE" >"$ROLE_FILE"
+  fi
+
+  NEED_REPOS=(kilotech_hardware)
+  VENV_REPOS=(kilotech_hardware)
+  NEED_OLLAMA=0
+  if has_role storage || has_role worker; then NEED_REPOS+=(kilotech_llm_local); fi
+  if has_role worker; then VENV_REPOS+=(kilotech_llm_local); NEED_OLLAMA=1; fi
+}
+
+not_needed() { record "$1" skipped "not needed on a $ROLE node"; }
+
+# The README(s) to follow next, for the summary.
+role_docs() {
+  if [[ $ROLE == all ]]; then echo "README.md (docker compose up -d --build)"; return; fi
+  local r out=()
+  for r in gateway storage worker; do has_role "$r" && out+=("$r/README.md"); done
+  (IFS=,; echo "${out[*]}" | sed 's/,/, /g')
+}
 
 # ---------------------------------------------------------------- sudo and apt
 
@@ -501,7 +580,7 @@ summary() {
     printf '   %s%-8s%s %s%s\n' "$color" "$state" "$N" "${RES_NAME[$i]}" "${RES_NOTE[$i]:+  ($YLW${RES_NOTE[$i]}$N)}"
   done
 
-  for repo in "${REPOS[@]}"; do
+  for repo in "${NEED_REPOS[@]}"; do
     [[ -f $(key_path "$repo").pub ]] || continue
     ((shown++)) || section "Deploy keys (add each one to its repo on GitHub: Settings > Deploy keys)"
     print_key "$repo"
@@ -515,8 +594,7 @@ summary() {
   fi
   echo
   if ((ok)); then
-    info "${GRN}All done.${N} Deploy from $SRV_DIR/kilotech_hardware by following the README in this"
-    info "machine's role folder (gateway/, storage/ or worker/)."
+    info "${GRN}All done.${N} Next: in $SRV_DIR/kilotech_hardware, follow $(role_docs)."
   else
     info "Some steps are not done yet (see above). Fix them and re-run: everything already done is skipped."
   fi
@@ -534,20 +612,25 @@ main() {
   # shellcheck disable=SC1091
   [[ -r /etc/os-release ]] && . /etc/os-release
 
+  resolve_role
+
   section "Kilotech node setup ($( ((CHECK_ONLY)) && echo "check only" || echo "check and fix"))"
-  info "user: $USER   repos: $SRV_DIR/{$(IFS=,; echo "${REPOS[*]}")}   model: $MODEL"
+  info "role:  $ROLE ($ROLE_SOURCE)"
+  info "user:  $USER"
+  info "repos: $SRV_DIR/{$(IFS=,; echo "${NEED_REPOS[*]}")}"
+  ((NEED_OLLAMA)) && info "model: $MODEL"
 
   if group prereqs "Base packages"; then
     step "base packages" check_prereqs fix_prereqs
   fi
 
   if group keys "Deploy keys and ~/.ssh/config"; then
-    for repo in "${REPOS[@]}"; do
+    for repo in "${NEED_REPOS[@]}"; do
       step "deploy key: $repo" check_key fix_key "$repo"
     done
     # Show keys GitHub does not know yet right away, so they can be added while the
     # installs below run. Access is checked again before cloning.
-    for repo in "${REPOS[@]}"; do
+    for repo in "${NEED_REPOS[@]}"; do
       [[ -f $(key_path "$repo").pub ]] && ! check_access "$repo" && ((ACCESS_DENIED)) && pending+=("$repo")
     done
     if ((${#pending[@]})); then
@@ -561,25 +644,35 @@ main() {
   if group docker "Docker"; then
     step "docker" check_docker fix_docker
   fi
-  if group ollama "Ollama"; then
-    step "ollama" check_ollama fix_ollama
-  fi
-  if group model "Ollama model"; then
-    step "model $MODEL" check_model fix_model
+  if ((!NEED_OLLAMA)); then
+    not_needed ollama
+    not_needed "model $MODEL"
+  else
+    if group ollama "Ollama"; then
+      step "ollama" check_ollama fix_ollama
+    fi
+    if group model "Ollama model"; then
+      step "model $MODEL" check_model fix_model
+    fi
   fi
 
   if group repos "Repos in $SRV_DIR"; then
-    for repo in "${REPOS[@]}"; do
+    for repo in "${NEED_REPOS[@]}"; do
       step "GitHub access: $repo" check_access fix_access "$repo"
       step "$SRV_DIR/$repo" check_repo fix_repo "$repo"
     done
   fi
 
   if group venvs "Virtual environments"; then
-    for repo in "${REPOS[@]}"; do
+    for repo in "${VENV_REPOS[@]}"; do
       step "venv: $SRV_DIR/$repo/.venv" check_venv fix_venv "$repo"
     done
   fi
+
+  for repo in "${ALL_REPOS[@]}"; do
+    [[ " ${NEED_REPOS[*]} " == *" $repo "* ]] || not_needed "$repo (deploy key, clone)"
+    [[ " ${VENV_REPOS[*]} " == *" $repo "* ]] || not_needed "venv: $SRV_DIR/$repo/.venv"
+  done
 
   summary
 }

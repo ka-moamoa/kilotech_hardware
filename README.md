@@ -65,25 +65,35 @@ Settings for the local stack come from environment variables or a root `.env`:
 ### Setting up a machine (script)
 
 After cloning this repo to `~/`, run the setup script as your normal user (not with
-`sudo`):
+`sudo`), giving the machine's role:
 
 ```
-~/kilotech_hardware/tools/setup_node.sh            # check everything, fix what is missing
-~/kilotech_hardware/tools/setup_node.sh --check    # only report what is missing
+~/kilotech_hardware/tools/setup_node.sh --role worker   # check everything, fix what is missing
+~/kilotech_hardware/tools/setup_node.sh --check         # only report what is missing
 ```
 
-It checks each item below and only does the ones that are not done yet, so it is safe to
-re-run:
+The role is saved, so later runs don't need `--role`. If no role is given or saved, the
+script asks for one. Several roles can share a machine (`--role gateway,storage`). `all`
+sets up everything, for the one-machine test cluster or a dev box. Each role gets:
+
+| Role | Repos in `/srv` | Ollama + model | venvs |
+| --- | --- | --- | --- |
+| gateway | `kilotech_hardware` | no | `kilotech_hardware` |
+| storage | `kilotech_hardware`, `kilotech_llm_local` (corpus) | no | `kilotech_hardware` |
+| worker | `kilotech_hardware`, `kilotech_llm_local` (plugin) | yes | both |
+
+For the role's needs, the script checks each item below and only does the ones that are
+not done yet, so it is safe to re-run:
 
 - installs base packages (git, ssh, curl, python3)
-- creates a GitHub deploy key for each repo (`~/.ssh/<repo>_deploy_ed25519`) and a
-  `Host github.com-<repo>` entry in `~/.ssh/config`, then prints the public keys
+- creates a GitHub deploy key for each repo the role needs (`~/.ssh/<repo>_deploy_ed25519`)
+  and a `Host github.com-<repo>` entry in `~/.ssh/config`, then prints the public keys
 - installs Docker Engine and the compose plugin, enables the service, and adds you to the
-  `docker` group
-- installs Ollama, starts it, and pulls `gemma4` (`--model` to change)
-- clones both repos into `/srv` through the deploy keys (or switches an existing clone's
-  `origin` to them)
-- creates a `.venv` with all dependencies in each `/srv` repo
+  `docker` group (every role)
+- workers only: installs Ollama, starts it, and pulls `gemma4` (`--model` to change)
+- clones the role's repos into `/srv` through the deploy keys (or switches an existing
+  clone's `origin` to them)
+- creates a `.venv` with all dependencies in those `/srv` repos
 
 Add each printed key to its repo on GitHub under **Settings > Deploy keys** (read-only is
 enough). The keys are printed early, so you can add them while Docker and Ollama install.
